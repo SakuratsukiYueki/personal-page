@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+
+# Local data (SQLite 等)
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# AI agent 設定
+.agents/
+skills-lock.json
+
+# OS 產生的檔案
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log

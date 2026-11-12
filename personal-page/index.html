@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEX-07 ・ 系統工程師</title>
+<meta name="description" content="NEX-07 的個人終端機:全端工程師、開源貢獻者、深夜 build 產出者。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0f0a'/%3E%3Ctext x='6' y='23' font-family='monospace' font-size='16' fill='%2377e08c'%3E%26gt;_%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* palette · CRT phosphor on near-black (OKLCH) */
+    --bg:            oklch(0.095 0 0);
+    --surface:       oklch(0.135 0.010 122);
+    --surface-2:     oklch(0.175 0.013 122);
+    --line:          oklch(0.26  0.018 122);
+    --ink:           oklch(0.925 0.012 122);
+    --muted:         oklch(0.60  0.022 122);
+    --phosphor:      oklch(0.780 0.160 122);
+    --phosphor-dim:  oklch(0.650 0.115 122);
+    --amber:         oklch(0.830 0.125 82);
+    --red:           oklch(0.640 0.190 25);
+
+    --font-display: "Martian Mono", "Noto Sans TC", monospace;
+    --font-body:    "Noto Sans TC", "Martian Mono", monospace;
+
+    --measure: 66ch;
+    --w-page:  1080px;
+
+    --z-topbar: 100;
+    --z-status: 100;
+    --z-term:   200;
+    --z-boot:   300;
+
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 3.2rem;
+    scroll-padding-bottom: 3rem;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 1rem;
+    line-height: 1.85;
+    /* CRT: subtle phosphor vignette + scanlines. Earned by the register, kept faint. */
+    background-image:
+      repeating-linear-gradient(to bottom,
+        transparent 0 2px,
+        oklch(0.095 0 0 / 0.28) 2px 3px),
+      radial-gradient(ellipse 120% 90% at 50% 0%,
+        oklch(0.16 0.02 122 / 0.55), transparent 65%);
+    overflow-x: hidden;
+  }
+
+  ::selection { background: var(--phosphor); color: oklch(0.09 0 0); }
+
+  a { color: var(--phosphor); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  :focus-visible {
+    outline: 2px solid var(--phosphor);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .wrap {
+    max-width: var(--w-page);
+    margin-inline: auto;
+    padding-inline: clamp(1.1rem, 4vw, 2.5rem);
+  }
+
+  /* ── top bar: terminal window titlebar ─────────────────── */
+  .topbar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: var(--z-topbar);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.55rem clamp(1.1rem, 4vw, 2.5rem);
+    background: oklch(0.11 0.012 122 / 0.92);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .topbar .dots { display: flex; gap: 6px; }
+  .topbar .dots i {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--line);
+  }
+  .topbar .dots i:first-child { background: oklch(0.64 0.19 25 / 0.8); }
+  .topbar .path { color: var(--muted); letter-spacing: 0.02em; }
+  .topbar .path b { color: var(--phosphor-dim); font-weight: 500; }
+  .topbar .clock { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .term-btn {
+    display: none; /* without JS the terminal cannot open */
+    font: inherit;
+    color: var(--phosphor);
+    background: transparent;
+    border: 1px solid oklch(0.78 0.16 122 / 0.45);
+    padding: 0.2rem 0.65rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+  }
+  .term-btn:hover {
+    background: var(--phosphor);
+    color: oklch(0.09 0 0);
+  }
+
+  .js .term-btn { display: inline-block; }
+
+  /* ── boot sequence ─────────────────────────────────────── */
+  .boot {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-boot);
+    background: var(--bg);
+    padding: clamp(1.5rem, 6vw, 4rem);
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    line-height: 2.1;
+    cursor: pointer;
+  }
+  .js .boot { display: block; }
+  .boot .ln { opacity: 0; white-space: pre-wrap; }
+  .boot .ok    { color: var(--phosphor-dim); }
+  .boot .warn  { color: var(--amber); }
+  .boot .skip {
+    position: absolute;
+    bottom: 1.4rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+  }
+  .boot.done { animation: bootfade 480ms var(--ease-out) forwards; }
+  @keyframes bootfade { to { opacity: 0; visibility: hidden; } }
+
+  /* ── hero ──────────────────────────────────────────────── */
+  .hero {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-block: 6rem 4rem;
+    position: relative;
+  }
+  .prompt {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .prompt b { color: var(--phosphor); font-weight: 500; }
+  .prompt .caret::after {
+    content: "▊";
+    color: var(--phosphor);
+    animation: blink 1.1s steps(1) infinite;
+    margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .hero h1 {
+    margin: 0.4rem 0 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(3rem, 10vw, 5.4rem);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-wrap: balance;
+    text-shadow: 0 0 22px oklch(0.78 0.16 122 / 0.35), 0 0 60px oklch(0.78 0.16 122 / 0.12);
+  }
+  .hero h1 span { color: var(--phosphor); }
+
+  .typed-line {
+    margin-top: 1.4rem;
+    font-family: var(--font-display);
+    font-size: clamp(0.95rem, 2.4vw, 1.25rem);
+    font-weight: 300;
+    color: var(--amber);
+    min-height: 1.6em;
+  }
+  .typed-line .pre { color: var(--muted); margin-right: 0.6em; }
+
+  .meta-row {
+    margin-top: 2.6rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem 2.2rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .meta-row .k { color: oklch(0.56 0.028 122); margin-right: 0.5em; }
+  .dot-live {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--phosphor);
+    box-shadow: 0 0 8px oklch(0.78 0.16 122 / 0.8);
+    margin-right: 0.45em;
+    animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* ── sections ──────────────────────────────────────────── */
+  section { padding-block: clamp(3.5rem, 9vw, 6.5rem); }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 2.2rem;
+  }
+  .sec-head .cmd {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--phosphor-dim);
+    white-space: nowrap;
+  }
+  .sec-head .cmd::before { content: "$ "; color: var(--muted); }
+  .sec-head .rule {
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+  h2 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: 0.01em; }
+
+  /* whoami */
+  .whoami {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr);
+    gap: clamp(2rem, 6vw, 4.5rem);
+    align-items: start;
+  }
+  .whoami p {
+    max-width: var(--measure);
+    margin: 0 0 1.2em;
+    color: var(--ink);
+  }
+  .whoami p strong { color: var(--phosphor); font-weight: 500; }
+  .spec {
+    font-size: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.3rem 1.4rem;
+    font-family: var(--font-display);
+  }
+  .spec h3 {
+    margin: 0 0 1rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .spec dl { margin: 0; display: grid; row-gap: 0.7rem; }
+  .spec dt { color: oklch(0.56 0.028 122); float: left; clear: left; width: 5.5em; }
+  .spec dd { margin: 0; color: var(--ink); }
+  .spec dd .hot { color: var(--amber); }
+
+  /* skills: process monitor */
+  .skills {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.6rem clamp(1.2rem, 3.5vw, 2.2rem) 0.4rem;
+  }
+  .skills .bar-row {
+    display: grid;
+    grid-template-columns: 9.5em 1fr 3.2em;
+    gap: 1rem;
+    align-items: center;
+    padding-block: 0.55rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+  }
+  .skills .pid { color: var(--muted); font-size: 0.68rem; }
+  .skills .name { color: var(--ink); }
+  .skills .track {
+    height: 10px;
+    background: var(--surface-2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .skills .fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(to right, oklch(0.61 0.11 122), var(--phosphor));
+    border-radius: 3px;
+    transition: width 900ms var(--ease-out);
+  }
+  .skills .pct {
+    text-align: right;
+    color: var(--phosphor-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .skills .bar-row.low .pct { color: var(--amber); }
+
+  /* projects */
+  .projects { display: grid; gap: 1rem; }
+  .proj {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 1.6rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.35rem 1.5rem;
+    transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out);
+  }
+  .proj:hover { border-color: oklch(0.78 0.16 122 / 0.5); background: var(--surface-2); }
+  .proj.featured { background: var(--surface-2); border-color: oklch(0.78 0.16 122 / 0.35); }
+  .proj .fname {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--phosphor);
+  }
+  .proj.featured .fname { font-size: 1.15rem; }
+  .proj .tag {
+    font-family: var(--font-display);
+    font-size: 0.65rem;
+    color: var(--amber);
+    border: 1px solid oklch(0.83 0.125 82 / 0.4);
+    border-radius: 99px;
+    padding: 0.1rem 0.6rem;
+    align-self: start;
+    white-space: nowrap;
+  }
+  .proj p {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+    max-width: 62ch;
+  }
+  .proj p b { color: var(--ink); font-weight: 500; }
+  .proj .stack {
+    grid-column: 1 / -1;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    color: var(--phosphor-dim);
+    letter-spacing: 0.03em;
+  }
+
+  /* log */
+  .log { font-family: var(--font-display); font-size: 0.82rem; }
+  .log .entry {
+    display: grid;
+    grid-template-columns: 7.5em 8.5em 1fr;
+    gap: 1.2rem;
+    padding-block: 0.8rem;
+    border-bottom: 1px dashed var(--line);
+  }
+  .log .entry:last-child { border-bottom: none; }
+  .log .hash { color: var(--red); }
+  .log .date { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .log .msg { color: var(--ink); }
+  .log .msg span { color: var(--amber); }
+
+  /* contact */
+  .contact p { max-width: var(--measure); color: var(--ink); margin: 0 0 2rem; }
+  .links { display: flex; flex-direction: column; gap: 0.7rem; max-width: 34rem; }
+  .link-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    padding: 0.85rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    transition: border-color 180ms var(--ease-out), transform 180ms var(--ease-out);
+  }
+  .link-row:hover {
+    border-color: oklch(0.78 0.16 122 / 0.6);
+    text-decoration: none;
+    transform: translateX(4px);
+  }
+  .link-row .sym { color: var(--muted); }
+  .link-row .label { color: var(--ink); min-width: 7em; font-weight: 500; }
+  .link-row .addr { color: var(--phosphor); font-size: 0.8rem; }
+
+  /* message form (posts to backend API) */
+  .msg-form {
+    margin-top: 2.2rem;
+    max-width: 34rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.4rem 1.5rem 1.5rem;
+    font-family: var(--font-display);
+  }
+  .msg-form .f-title {
+    margin: 0 0 1.1rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .msg-form .f-title .hot { color: var(--phosphor-dim); }
+  .msg-form .f-row { margin-bottom: 1rem; }
+  .msg-form label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--phosphor-dim);
+    margin-bottom: 0.35rem;
+  }
+  .msg-form label .p { color: var(--muted); margin-right: 0.45em; }
+  .msg-form input,
+  .msg-form textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 0.55rem 0.8rem;
+    caret-color: var(--phosphor);
+    transition: border-color 160ms var(--ease-out);
+  }
+  .msg-form textarea {
+    resize: vertical;
+    min-height: 6.5em;
+    font-family: var(--font-body);
+    line-height: 1.7;
+  }
+  .msg-form input:focus-visible,
+  .msg-form textarea:focus-visible {
+    outline: 2px solid var(--phosphor);
+    outline-offset: 1px;
+  }
+  .msg-form .f-err {
+    display: none;
+    font-size: 0.72rem;
+    color: var(--red);
+    margin: 0.3rem 0 0;
+  }
+  .msg-form .f-row.err input,
+  .msg-form .f-row.err textarea { border-color: oklch(0.64 0.19 25 / 0.75); }
+  .msg-form .f-row.err .f-err { display: block; }
+  .msg-form .f-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.2rem;
+  }
+  .f-submit {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--phosphor);
+    background: transparent;
+    border: 1px solid oklch(0.78 0.16 122 / 0.45);
+    padding: 0.55rem 1.4rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+  }
+  .f-submit:hover:not([disabled]) { background: var(--phosphor); color: oklch(0.09 0 0); }
+  .f-submit[disabled] { opacity: 0.5; cursor: wait; }
+  .f-status {
+    font-size: 0.78rem;
+    color: var(--muted);
+    min-height: 1.4em;
+    margin: 0;
+  }
+  .f-status.wait { color: var(--amber); }
+  .f-status.ok  { color: var(--phosphor); }
+  .f-status.err { color: var(--red); }
+
+  /* footer status bar (tmux style) */
+  .statusbar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--z-status);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem clamp(1.1rem, 4vw, 2.5rem);
+    background: oklch(0.11 0.012 122 / 0.94);
+    border-top: 1px solid var(--line);
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .statusbar::-webkit-scrollbar { display: none; }
+  .statusbar .session {
+    color: oklch(0.09 0 0);
+    background: var(--phosphor-dim);
+    border-radius: 4px;
+    padding: 0.15rem 0.6rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .statusbar a {
+    color: var(--muted);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .statusbar a:hover { color: var(--bg); background: var(--phosphor); text-decoration: none; }
+  .statusbar .right {
+    margin-left: auto;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .statusbar .right b { color: var(--phosphor-dim); font-weight: 500; }
+
+  /* ── interactive terminal (dialog) ─────────────────────── */
+  dialog.term {
+    position: fixed;
+    inset: auto 1rem 3.6rem auto;
+    margin: 0;
+    width: min(560px, calc(100vw - 2rem));
+    max-height: min(62vh, 520px);
+    background: oklch(0.09 0 0 / 0.97);
+    color: var(--ink);
+    border: 1px solid oklch(0.78 0.16 122 / 0.55);
+    border-radius: 10px;
+    box-shadow: 0 12px 48px oklch(0 0 0 / 0.6), 0 0 40px oklch(0.78 0.16 122 / 0.10);
+    padding: 0;
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+  }
+  dialog.term::backdrop { background: oklch(0 0 0 / 0.35); }
+  .term-head {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+  }
+  .term-head .close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+  }
+  .term-head .close:hover { color: var(--red); }
+  .term-body {
+    height: min(40vh, 380px);
+    overflow-y: auto;
+    padding: 0.9rem 1rem 0.4rem;
+    line-height: 1.9;
+  }
+  .term-body .t-in .u { color: var(--phosphor); }
+  .term-body .t-out { white-space: pre-wrap; color: var(--ink); }
+  .term-body .t-out .dim  { color: var(--muted); }
+  .term-body .t-out .grn  { color: var(--phosphor); }
+  .term-body .t-out .amb  { color: var(--amber); }
+  .term-body .t-out .err  { color: var(--red); }
+  .term-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.6rem 1rem 0.9rem;
+    border-top: 1px solid var(--line);
+  }
+  .term-form .ps1 { color: var(--phosphor); white-space: nowrap; }
+  .term-form input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: var(--ink);
+    font: inherit;
+    caret-color: var(--phosphor);
+  }
+  .term-form input:focus { outline: none; }
+
+  /* ── reveal (enhances visible-by-default content) ──────── */
+  .js.rm-ok .rv {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 620ms var(--ease-out), transform 620ms var(--ease-out);
+    transition-delay: var(--d, 0ms);
+  }
+  .js.rm-ok .rv.in { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .boot { display: none !important; }
+    .prompt .caret::after, .dot-live { animation: none; }
+    .skills .fill { transition: none; }
+    .js .rv, .js .rv.in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  }
+
+  /* ── responsive ────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    .whoami { grid-template-columns: 1fr; }
+    .skills .bar-row { grid-template-columns: 6.5em 1fr 3em; gap: 0.6rem; }
+    .log .entry { grid-template-columns: 5.5em 1fr; }
+    .log .date { grid-column: 2; }
+    .log .msg { grid-column: 2; }
+    .proj { grid-template-columns: 1fr auto; }
+    .topbar .clock { display: none; }
+    .statusbar .right { display: none; }
+    dialog.term { inset: auto 0.6rem 3.4rem 0.6rem; width: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- boot -->
+<div class="boot" id="boot" aria-hidden="true">
+  <div id="bootLines"></div>
+  <div class="skip">按任意鍵跳過</div>
+</div>
+
+<!-- top bar -->
+<header class="topbar">
+  <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="path"><b>nex-07</b>@circuit-lab:~</div>
+  <button class="term-btn" id="termOpen" aria-haspopup="dialog">&gt;_ term</button>
+  <div class="clock" id="clock" aria-hidden="true"></div>
+</header>
+
+<main class="wrap">
+
+  <!-- hero -->
+  <section class="hero" id="top" aria-label="自我介紹">
+    <p class="prompt"><b>guest</b>@circuit-lab:~$ whoami<span class="caret" aria-hidden="true"></span></p>
+    <h1>NEX<span>-</span>07<span>.</span></h1>
+    <p class="typed-line" id="typed"><span class="pre">//</span><span id="typedText">全端工程師</span><span class="caret" aria-hidden="true"></span></p>
+    <div class="meta-row">
+      <span><span class="k">座標</span>新北,台灣</span>
+      <span><span class="k">狀態</span><i class="dot-live" aria-hidden="true"></i>ONLINE</span>
+      <span><span class="k">上次登入</span>今天 03:47</span>
+    </div>
+  </section>
+
+  <!-- whoami -->
+  <section id="whoami" aria-labelledby="h-whoami">
+    <div class="sec-head rv">
+      <span class="cmd">whoami --verbose</span>
+      <span class="rule" aria-hidden="true"></span>
+      <h2 id="h-whoami">關於</h2>
+    </div>
+    <div class="whoami">
+      <div class="rv" style="--d:80ms">
+        <p>白天寫 <strong>TypeScript</strong> 與 <strong>Go</strong>,把模糊的需求翻譯成能跑、能測、能部署的系統。晚上拆別人的開源專案,沿著 commit 追到第一行,看它是怎麼長出來的。</p>
+        <p>修過最刁鑽的 bug 是一個只在週五下午出現的競態條件,花掉三天與兩壺咖啡。從那之後,寫程式之前先寫重現步驟。</p>
+        <p>相信好的軟體像好的終端機:安靜、快速、誠實地回報錯誤。</p>
+      </div>
+      <aside class="spec rv" style="--d:160ms" aria-label="系統資訊">
+        <h3>SYSTEM INFO</h3>
+        <dl>
+          <dt>別名</dt><dd>NEX-07</dd>
+          <dt>主業</dt><dd>後端 / 全端工程</dd>
+          <dt>工具</dt><dd>Go・TS・SQL</dd>
+          <dt>時區</dt><dd>UTC+8</dd>
+          <dt>狀態</dt><dd><span class="hot">接受外包與合作</span></dd>
+        </dl>
+      </aside>
+    </div>
+  </section>
+
+  <!-- skills -->
+  <section id="skills" aria-labelledby="h-skills">
+    <div class="sec-head rv">
+      <span class="cmd">top --sort=skill</span>
+      <span class="rule" aria-hidden="true"></span>
+      <h2 id="h-skills">技能負載</h2>
+    </div>
+    <div class="skills rv" style="--d:80ms">
+      <div class="bar-row" data-pct="92"><span class="pid">1042</span><span class="name">TypeScript</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row" data-pct="85"><span class="pid">0917</span><span class="name">Go</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row" data-pct="80"><span class="pid">0733</span><span class="name">React / 前端</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row" data-pct="78"><span class="pid">0512</span><span class="name">PostgreSQL</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row" data-pct="76"><span class="pid">0428</span><span class="name">系統設計</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row low" data-pct="62"><span class="pid">0331</span><span class="name">Rust(學習中)</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+      <div class="bar-row low" data-pct="55"><span class="pid">0214</span><span class="name">Kubernetes</span><span class="track"><span class="fill"></span></span><span class="pct"></span></div>
+    </div>
+  </section>
+
+  <!-- projects -->
+  <section id="projects" aria-labelledby="h-projects">
+    <div class="sec-head rv">
+      <span class="cmd">ls ~/projects</span>
+      <span class="rule" aria-hidden="true"></span>
+      <h2 id="h-projects">專案</h2>
+    </div>
+    <div class="projects">
+      <article class="proj featured rv">
+        <span class="fname">heartbeat/</span>
+        <span class="tag">主打</span>
+        <p><b>分散式服務健康監測。</b>單一 binary 部署到邊緣節點,透過 WebSocket 推即時指標,異常時打電話叫你起床。在 40 台機器上跑了半年,誤報次數:3。</p>
+        <span class="stack">Go · WebSocket · SQLite · Grafana</span>
+      </article>
+      <article class="proj rv" style="--d:70ms">
+        <span class="fname">shizi/</span>
+        <span class="tag">Side project</span>
+        <p><b>為繁中排版而生的靜態站生成器。</b>標點擠壓、避頭頭點、直式輸出(實驗中),因為受夠了中文部落格被當成英文排版。</p>
+        <span class="stack">TypeScript · Node.js</span>
+      </article>
+      <article class="proj rv" style="--d:140ms">
+        <span class="fname">night-queue/</span>
+        <span class="tag">開源</span>
+        <p><b>輕量任務佇列。</b>沒有 Redis、沒有控制台,一個檔案、一條指令就啟動,適合半夜不想運維的小團隊。</p>
+        <span class="stack">Go · < 2k 行</span>
+      </article>
+      <article class="proj rv" style="--d:210ms">
+        <span class="fname">phosphor-ui/</span>
+        <span class="tag">Meta</span>
+        <p><b>這個網頁本身。</b>純 HTML/CSS/JS,零框架、零建置步驟,樣式整理成 CRT 磷光風的元件集。</p>
+        <span class="stack">HTML · CSS · Vanilla JS</span>
+      </article>
+    </div>
+  </section>
+
+  <!-- log -->
+  <section id="log" aria-labelledby="h-log">
+    <div class="sec-head rv">
+      <span class="cmd">git log --oneline</span>
+      <span class="rule" aria-hidden="true"></span>
+      <h2 id="h-log">近期動態</h2>
+    </div>
+    <div class="log rv" style="--d:80ms">
+      <div class="entry"><span class="hash">a3f9c21</span><span class="date">2026-11-08</span><span class="msg">heartbeat: 修復指標聚合在重啟後的競態條件</span></div>
+      <div class="entry"><span class="hash">7d21e0b</span><span class="date">2026-10-30</span><span class="msg">shizi: 支援直式排版<span>(實驗)</span></span></div>
+      <div class="entry"><span class="hash">f0a5d3c</span><span class="date">2026-10-12</span><span class="msg">night-queue: v1.0 發布,寫完 README 比寫程式久</span></div>
+      <div class="entry"><span class="hash">c88b1aa</span><span class="date">2026-09-27</span><span class="msg">phosphor-ui: 掃描線效果加了 reduced-motion 開關</span></div>
+    </div>
+  </section>
+
+  <!-- contact -->
+  <section id="contact" aria-labelledby="h-contact">
+    <div class="sec-head rv">
+      <span class="cmd">ping nex-07</span>
+      <span class="rule" aria-hidden="true"></span>
+      <h2 id="h-contact">建立連線</h2>
+    </div>
+    <div class="contact">
+      <p class="rv">有專案想討論、職缺想聊聊,或只是想戰一下編輯器主題,都歡迎。回信速度取決於當天的 build 有沒有過。</p>
+      <div class="links">
+        <a class="link-row rv" href="mailto:nex07@example.dev">
+          <span class="sym">&gt;</span><span class="label">Email</span><span class="addr">nex07@example.dev</span>
+        </a>
+        <a class="link-row rv" style="--d:70ms" href="https://github.com/" rel="noopener">
+          <span class="sym">&gt;</span><span class="label">GitHub</span><span class="addr">github.com/nex-07</span>
+        </a>
+        <a class="link-row rv" style="--d:140ms" href="#" >
+          <span class="sym">&gt;</span><span class="label">閱讀/RSS</span><span class="addr">blog.nex07.dev/feed.xml</span>
+        </a>
+      </div>
+
+      <!-- message form → backend POST /api/messages -->
+      <form class="msg-form rv" style="--d:210ms" id="msgForm"
+            method="post" action="http://localhost:3000/api/messages"
+            aria-labelledby="fTitle">
+        <p class="f-title" id="fTitle">// <span class="hot">直接留言</span> · 訊息會寫入我的收件佇列</p>
+        <div class="f-row">
+          <label for="fName"><span class="p">$</span>name</label>
+          <input id="fName" name="name" type="text" maxlength="80" required autocomplete="name" aria-describedby="eName">
+          <p class="f-err" id="eName"></p>
+        </div>
+        <div class="f-row">
+          <label for="fEmail"><span class="p">$</span>email</label>
+          <input id="fEmail" name="email" type="email" maxlength="254" required autocomplete="email" aria-describedby="eEmail">
+          <p class="f-err" id="eEmail"></p>
+        </div>
+        <div class="f-row">
+          <label for="fMessage"><span class="p">$</span>message</label>
+          <textarea id="fMessage" name="message" maxlength="2000" required aria-describedby="eMessage"></textarea>
+          <p class="f-err" id="eMessage"></p>
+        </div>
+        <div class="f-actions">
+          <button type="submit" class="f-submit" id="fSubmit">send ▸</button>
+          <p class="f-status" id="fStatus" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <div style="height: 3rem" aria-hidden="true"></div>
+</main>
+
+<!-- footer status bar -->
+<nav class="statusbar" aria-label="頁面導覽">
+  <span class="session">0:nex-07</span>
+  <a href="#whoami">1:whoami</a>
+  <a href="#skills">2:skills</a>
+  <a href="#projects">3:projects</a>
+  <a href="#log">4:log</a>
+  <a href="#contact">5:contact</a>
+  <span class="right">UTC+8 <b id="uptime">00:00:00</b> · 負載 0.42</span>
+</nav>
+
+<!-- interactive terminal -->
+<dialog class="term" id="termDialog" aria-label="互動終端機">
+  <div class="term-head">
+    guest@nex-07: ~/term
+    <button class="close" id="termClose">esc ✕</button>
+  </div>
+  <div class="term-body" id="termBody" role="log" aria-live="polite">
+    <div class="t-out"><span class="dim">NEX-OS shell v0.7 · 輸入</span> <span class="grn">help</span> <span class="dim">查看可用指令</span></div>
+  </div>
+  <form class="term-form" id="termForm">
+    <span class="ps1">guest@nex-07:~$</span>
+    <input id="termInput" type="text" autocomplete="off" spellcheck="false" aria-label="輸入終端機指令">
+  </form>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+  root.classList.add("js");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduced) root.classList.add("rm-ok");
+
+  /* clock + uptime */
+  var clockEl = document.getElementById("clock");
+  var upEl = document.getElementById("uptime");
+  var t0 = Date.now();
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function tick() {
+    var d = new Date();
+    clockEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    var s = Math.floor((Date.now() - t0) / 1000);
+    upEl.textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s % 3600 / 60)) + ":" + pad(s % 60);
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  /* boot sequence */
+  var boot = document.getElementById("boot");
+  var bootLines = document.getElementById("bootLines");
+  var LINES = [
+    '<span class="ok">[ OK ]</span> 載入核心模組 nexus.core 6.1.7',
+    '<span class="ok">[ OK ]</span> 掛載裝置 /dev/caffeine',
+    '<span class="ok">[ OK ]</span> 啟動顯示服務 phosphor.display',
+    '<span class="ok">[ OK ]</span> 同步時鐘 NTP: pool.ntp.org',
+    '<span class="warn">[WARN]</span> 偵測到未讀訊息 128 封,已延後處理',
+    '<span class="ok">[ OK ]</span> 歡迎回來。'
+  ];
+  function endBoot() {
+    if (!boot || boot.classList.contains("done")) return;
+    boot.classList.add("done");
+    setTimeout(function () { boot.remove(); }, 520);
+    document.removeEventListener("keydown", endBoot);
+  }
+  if (reduced || !bootLines) {
+    if (boot) boot.remove();
+  } else {
+    LINES.forEach(function (html, i) {
+      setTimeout(function () {
+        var el = document.createElement("div");
+        el.className = "ln";
+        el.innerHTML = html;
+        el.style.opacity = "1";
+        bootLines.appendChild(el);
+        if (i === LINES.length - 1) setTimeout(endBoot, 700);
+      }, 240 * i);
+    });
+    setTimeout(endBoot, 240 * LINES.length + 900);
+    document.addEventListener("keydown", endBoot, { once: true });
+    boot.addEventListener("click", endBoot);
+  }
+
+  /* typing effect */
+  var typedText = document.getElementById("typedText");
+  var ROLES = ["全端工程師", "系統架構愛好者", "開源貢獻者", "凌晨三點的鍵盤手"];
+  if (reduced || !typedText) {
+    /* keep the default static text */
+  } else {
+    var ri = 0, ci = ROLES[0].length, deleting = true;
+    (function loop() {
+      var word = ROLES[ri];
+      ci += deleting ? -1 : 1;
+      typedText.textContent = word.slice(0, Math.max(ci, 0));
+      var wait = deleting ? 55 : 110;
+      if (!deleting && ci >= word.length) { wait = 2100; deleting = true; }
+      else if (deleting && ci <= 0) { deleting = false; ri = (ri + 1) % ROLES.length; wait = 380; }
+      setTimeout(loop, wait);
+    })();
+  }
+
+  /* reveals + skill bars */
+  var fillsBound = false;
+  function bindFills() {
+    if (fillsBound) return;
+    fillsBound = true;
+    document.querySelectorAll(".skills .bar-row").forEach(function (row) {
+      var pct = parseInt(row.getAttribute("data-pct"), 10) || 0;
+      row.querySelector(".pct").textContent = pct + "%";
+      requestAnimationFrame(function () {
+        row.querySelector(".fill").style.width = pct + "%";
+      });
+    });
+  }
+  if (reduced) {
+    bindFills();
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("in");
+        if (e.target.querySelector(".bar-row")) bindFills();
+        io.unobserve(e.target);
+      });
+    }, { threshold: 0.18 });
+    document.querySelectorAll(".rv").forEach(function (el) { io.observe(el); });
+    /* safety: hero elements are above the fold, mark them in immediately */
+    document.querySelectorAll(".hero .rv").forEach(function (el) { el.classList.add("in"); });
+  }
+  if (reduced) document.querySelectorAll(".rv").forEach(function (el) { el.classList.add("in"); });
+
+  /* interactive terminal */
+  var dlg = document.getElementById("termDialog");
+  var body = document.getElementById("termBody");
+  var input = document.getElementById("termInput");
+  var form = document.getElementById("termForm");
+  var history = [], hIdx = -1;
+  var OPEN_MSGS = {
+    whoami: "NEX-07 · 後端/全端工程師 · 新北,台灣 · UTC+8\n喜歡把模糊的問題拆成能跑的系統。",
+    skills: "TypeScript 92% · Go 85% · React 80% · PostgreSQL 78%\n系統設計 76% · Rust 62%(學習中)· K8s 55%",
+    projects: "heartbeat/  分散式服務健康監測(Go)\nshizi/      繁中優先的靜態站生成器(TS)\nnight-queue/ 單 binary 任務佇列(Go)\nphosphor-ui/ 這個網頁的樣式集(CSS)",
+    contact: "email  nex07@example.dev\ngithub github.com/nex-07\nblog   blog.nex07.dev\n\n輸入 <span class='grn'>msg</span> 可直接留言給我。",
+    help: "可用指令:\n  whoami    我是誰\n  skills    技能負載\n  projects  專案列表\n  uptime    本次連線時長\n  date      現在時間\n  contact   聯絡方式\n  msg       直接留言給我\n  clear     清除畫面\n  sudo      (你確定?)\n  exit      關閉終端機"
+  };
+  function out(html, cls) {
+    var el = document.createElement("div");
+    el.className = cls || "t-out";
+    el.innerHTML = html;
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+  }
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function run(cmd) {
+    var c = cmd.trim();
+    if (!c) return;
+    out('<span class="grn">guest@nex-07:~$</span> ' + esc(c), "t-in");
+    history.push(c);
+    hIdx = history.length;
+    var key = c.toLowerCase().split(/\s+/)[0];
+    var arg = c.toLowerCase().split(/\s+/)[1];
+    switch (key) {
+      case "help": out(esc(OPEN_MSGS.help)); break;
+      case "whoami": out(esc(OPEN_MSGS.whoami)); break;
+      case "skills": out(esc(OPEN_MSGS.skills)); break;
+      case "projects": case "ls": out(esc(OPEN_MSGS.projects)); break;
+      case "contact": out(esc(OPEN_MSGS.contact)); break;
+      case "uptime": {
+        var s = Math.floor((Date.now() - t0) / 1000);
+        out("本次連線已維持 <span class='grn'>" + (Math.floor(s / 60) + " 分 " + (s % 60) + " 秒") + "</span>,連線品質良好。");
+        break;
+      }
+      case "date": out(new Date().toLocaleString("zh-TW", { hour12: false })); break;
+      case "clear": body.innerHTML = ""; break;
+      case "sudo": out("<span class='err'>nex-07 不在 sudoers 檔案中。此事件已回報。</span>"); break;
+      case "exit": case "quit": dlg.close(); break;
+      case "msg": case "message": {
+        dlg.close();
+        var target = document.getElementById("contact");
+        if (target) target.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
+        setTimeout(function () {
+          var name = document.getElementById("fName");
+          if (name) name.focus({ preventScroll: true });
+        }, reduced ? 0 : 650);
+        break;
+      }
+      case "rm": out("<span class='amb'> 「" + esc(arg || "-rf") + "」?這裡是示範終端機,什麼都不會刪。</span>"); break;
+      case "hello": case "hi": case "嗨": case "你好": out("嗨。輸入 <span class='grn'>help</span> 可以看指令。"); break;
+      default: out("command not found: " + esc(key) + "\n輸入 <span class='grn'>help</span> 查看可用指令。");
+    }
+  }
+  document.getElementById("termOpen").addEventListener("click", function () {
+    dlg.showModal();
+    input.focus();
+  });
+  document.getElementById("termClose").addEventListener("click", function () { dlg.close(); });
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    run(input.value);
+    input.value = "";
+  });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowUp" && hIdx > 0) { hIdx--; input.value = history[hIdx] || ""; e.preventDefault(); }
+    if (e.key === "ArrowDown") {
+      if (hIdx < history.length - 1) { hIdx++; input.value = history[hIdx] || ""; }
+      else { hIdx = history.length; input.value = ""; }
+      e.preventDefault();
+    }
+  });
+  /* clicking anywhere in terminal body refocuses input */
+  body.addEventListener("click", function () { input.focus(); });
+
+  /* ── message form → backend API ────────────────────────── */
+  var API_BASE = "http://localhost:3000"; // 正式部署時改成你的 API 網址
+  var msgForm = document.getElementById("msgForm");
+  if (msgForm) {
+    var fStatus = document.getElementById("fStatus");
+    var fSubmit = document.getElementById("fSubmit");
+
+    function setStatus(text, cls) {
+      fStatus.textContent = text;
+      fStatus.className = "f-status" + (cls ? " " + cls : "");
+    }
+    function clearErrs() {
+      msgForm.querySelectorAll(".f-row").forEach(function (row) {
+        row.classList.remove("err");
+        var err = row.querySelector(".f-err");
+        if (err) err.textContent = "";
+        var field = row.querySelector("input, textarea");
+        if (field) field.removeAttribute("aria-invalid");
+      });
+    }
+    function setErr(id, msg) {
+      var err = document.getElementById(id);
+      if (!err) return;
+      err.textContent = msg;
+      var row = err.closest(".f-row");
+      if (row) {
+        row.classList.add("err");
+        var field = row.querySelector("input, textarea");
+        if (field) field.setAttribute("aria-invalid", "true");
+      }
+    }
+
+    msgForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearErrs();
+      fSubmit.disabled = true;
+      fSubmit.textContent = "sending …";
+      setStatus("連線中 …", "wait");
+
+      fetch(API_BASE + "/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: msgForm.elements["name"].value.trim(),
+          email: msgForm.elements["email"].value.trim(),
+          message: msgForm.elements["message"].value.trim()
+        })
+      }).then(function (res) {
+        return res.json().then(function (j) { return { status: res.status, j: j }; },
+                              function () { return { status: res.status, j: null }; });
+      }).then(function (r) {
+        if (r.status === 201) {
+          setStatus("✓ 已寫入佇列,回信取決於當天的 build。", "ok");
+          msgForm.reset();
+        } else if (r.status === 400 && r.j && r.j.errors) {
+          var errs = r.j.errors;
+          setErr("eName", errs.name || "");
+          setErr("eEmail", errs.email || "");
+          setErr("eMessage", errs.message || "");
+          setStatus("格式驗證失敗,請檢查標紅的欄位。", "err");
+        } else {
+          setStatus("[" + r.status + "] 伺服器收到但沒處理好,稍後再試。", "err");
+        }
+      }).catch(function () {
+        setStatus("連線失敗 — 後端沒開?(npm start)", "err");
+      }).finally(function () {
+        fSubmit.disabled = false;
+        fSubmit.textContent = "send ▸";
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
